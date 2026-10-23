@@ -119,10 +119,19 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
+  const proofVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isScanningRef = useRef<boolean>(true);
+
+  // Synchronize stream with proofVideoRef when proof capture opens
+  useEffect(() => {
+    if (isCapturingProof && streamRef.current && proofVideoRef.current) {
+      proofVideoRef.current.srcObject = streamRef.current;
+      proofVideoRef.current.play().catch(() => {});
+    }
+  }, [isCapturingProof, cameraActive]);
 
   // Keep scanning ref synced
   useEffect(() => {
@@ -210,7 +219,11 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        await videoRef.current.play().catch(() => {});
+      }
+      if (proofVideoRef.current) {
+        proofVideoRef.current.srcObject = stream;
+        await proofVideoRef.current.play().catch(() => {});
       }
       setCameraActive(true);
       setIsScanning(true);
@@ -390,9 +403,12 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
   // LIVE CAMERA SNAPSHOT CAPTURE (NO FILE UPLOAD ALLOWED - STRICT IN-APP CAMERA ONLY)
   const handleSnapLiveProof = () => {
-    const video = videoRef.current;
+    const video = (proofVideoRef.current && proofVideoRef.current.readyState >= proofVideoRef.current.HAVE_CURRENT_DATA)
+      ? proofVideoRef.current
+      : (videoRef.current || proofVideoRef.current);
+
     if (!video || video.readyState < video.HAVE_CURRENT_DATA) {
-      alert('Camera chưa sẵn sàng để chụp ảnh. Vui lòng thử lại!');
+      alert('Camera chưa sẵn sàng để chụp ảnh. Vui lòng đợi 1 giây hoặc thử lại!');
       return;
     }
 
@@ -406,12 +422,12 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // WATERMARK OVERLAY: Timestamp + Đoàn Viên Info + GPS Coordinates for Authenticity
-    const bannerHeight = 85;
+    const bannerHeight = 90;
     const yStart = canvas.height - bannerHeight;
 
     // Gradient dark banner
     const gradient = ctx.createLinearGradient(0, yStart, 0, canvas.height);
-    gradient.addColorStop(0, 'rgba(15, 23, 42, 0.85)');
+    gradient.addColorStop(0, 'rgba(15, 23, 42, 0.88)');
     gradient.addColorStop(1, 'rgba(15, 23, 42, 0.98)');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, yStart, canvas.width, bannerHeight);
@@ -422,27 +438,32 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     ctx.fillStyle = '#2563eb'; // Blue
     ctx.fillRect(canvas.width * 0.45, yStart, canvas.width * 0.55, 3);
 
-    // Watermark text
+    // Watermark header
     ctx.fillStyle = '#38bdf8'; // Sky blue
     ctx.font = 'bold 13px sans-serif';
     ctx.fillText('★ ĐOÀN VIÊN SỐ — MINH CHỨNG THAM GIA THỰC TẾ (CHỐNG GIAN LẬN)', 14, yStart + 20);
 
+    // Member identity
     ctx.fillStyle = '#ffffff';
     ctx.font = '12px sans-serif';
     ctx.fillText(
-      `Đoàn viên: ${currentUser.full_name} (${currentUser.student_code}) • ${currentUser.class_name}`,
+      `Đoàn viên: ${currentUser.full_name} (${currentUser.student_code}) • ${currentUser.class_name} • ${currentUser.union_unit}`,
       14,
-      yStart + 40
+      yStart + 38
     );
 
     const nowStr = `${new Date().toLocaleTimeString('vi-VN')} ngày ${new Date().toLocaleDateString('vi-VN')}`;
     const gpsStr = locationCoords
-      ? `GPS: ${locationCoords.latitude.toFixed(5)}°N, ${locationCoords.longitude.toFixed(5)}°E (Sai số ±${Math.round(locationCoords.accuracy || 0)}m)`
+      ? `GPS: ${locationCoords.latitude.toFixed(5)}°N, ${locationCoords.longitude.toFixed(5)}°E (Sai số ±${Math.round(locationCoords.accuracy || 0)}m)${locationCoords.distance_meters !== undefined ? ` • Cự ly: ${locationCoords.distance_meters}m` : ''}`
       : 'GPS: Chưa có tọa độ';
 
     ctx.fillStyle = '#cbd5e1';
     ctx.font = '11px monospace';
-    ctx.fillText(`Thời gian chụp: ${nowStr} | ${gpsStr}`, 14, yStart + 60);
+    ctx.fillText(`Thời gian: ${nowStr} (Giờ VN) | ${gpsStr}`, 14, yStart + 56);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'italic 10px sans-serif';
+    ctx.fillText('Đoàn khoa Cơ khí - Đoàn trường Cao đẳng Kiên Giang • Xác thực máy ảnh trực tiếp', 14, yStart + 74);
 
     // Encode to Data URL
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
@@ -992,7 +1013,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
                     <div className="relative aspect-video max-w-xs mx-auto rounded-xl overflow-hidden bg-black flex items-center justify-center">
                       <video
-                        ref={videoRef}
+                        ref={proofVideoRef}
                         playsInline
                         muted
                         autoPlay
