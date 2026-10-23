@@ -166,17 +166,17 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       err => {
         console.warn('Geolocation error:', err);
         setLocationStatus('error');
-        let msg = 'Không thể lấy tọa độ GPS. Vui lòng cấp quyền vị trí cho trang web.';
+        let msg = 'Không thể lấy tọa độ GPS. Vui lòng cấp quyền vị trí cho trang web và bật định vị.';
         if (err.code === err.PERMISSION_DENIED) {
-          msg = 'Quyền truy cập vị trí bị từ chối. Vui lòng bật GPS trong cài đặt trình duyệt.';
+          msg = 'Quyền truy cập vị trí bị từ chối. Vui lòng bật GPS/Location trong cài đặt trình duyệt hoặc trang web.';
         } else if (err.code === err.TIMEOUT) {
-          msg = 'Quá thời gian chờ định vị GPS. Vui lòng thử lại.';
+          msg = 'Quá thời gian chờ định vị GPS. Vui lòng thử lại với GPS bật.';
         }
         setLocationErrorMessage(msg);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 15000,
         maximumAge: 0,
       }
     );
@@ -215,20 +215,33 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
         return;
       }
 
+      // Yêu cầu quyền truy cập camera mỗi lần (ưu tiên trải nghiệm mobile)
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: { ideal: mode },
+            facingMode: { exact: mode },
             width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
           audio: false,
         });
       } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: mode },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
       }
 
       streamRef.current = stream;
@@ -236,12 +249,14 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('webkit-playsinline', 'true');
         videoRef.current.muted = true;
         await videoRef.current.play().catch(() => {});
       }
       if (proofVideoRef.current) {
         proofVideoRef.current.srcObject = stream;
         proofVideoRef.current.setAttribute('playsinline', 'true');
+        proofVideoRef.current.setAttribute('webkit-playsinline', 'true');
         proofVideoRef.current.muted = true;
         await proofVideoRef.current.play().catch(() => {});
       }
@@ -251,7 +266,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     } catch (err: any) {
       console.warn('Camera stream error:', err);
       setCameraError(
-        'Không thể mở camera. Vui lòng cấp quyền truy cập máy ảnh hoặc sử dụng tính năng Quét Thử Nghiệm 1-Chạm.'
+        'Không thể mở camera. Vui lòng cấp quyền truy cập máy ảnh (hoặc thử lại trên HTTPS). Trên điện thoại, hãy mở trình duyệt Chrome/Safari và cho phép Camera khi được hỏi.'
       );
       setCameraActive(false);
     }
@@ -441,7 +456,9 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
   // Handle Tab Switch
   useEffect(() => {
     if (activeTab === 'real_scanner') {
+      // Tự động yêu cầu camera & vị trí khi vào tab quét (đặc biệt cho tài khoản đoàn viên trên mobile)
       startCamera();
+      fetchCurrentLocation();
     } else {
       stopCamera();
     }
