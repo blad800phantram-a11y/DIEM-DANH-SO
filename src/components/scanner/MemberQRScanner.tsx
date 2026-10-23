@@ -282,6 +282,8 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     if (!qrData) return;
     if (!force && !isScanningRef.current) return;
 
+    const raw = String(qrData).trim();
+
     // Haptic & Sound Feedback
     try {
       navigator.vibrate?.([60, 40, 60]);
@@ -292,48 +294,51 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
     // Pause scanning to display verification card
     setIsScanning(false);
-    setScannedRawPayload(qrData);
+    setScannedRawPayload(raw);
     setValidationWarning('');
 
-    // Parse payload and match activity
+    // Parse payload and match activity - CHỈ chấp nhận mã QR do hệ thống công bố
     try {
       let payload: DynamicQRPayload | null = null;
-      if (qrData.startsWith('{') && qrData.endsWith('}')) {
-        payload = JSON.parse(qrData);
+      if (raw.startsWith('{') && raw.endsWith('}')) {
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          payload = null;
+        }
       }
 
-      if (payload && payload.activityId) {
+      if (payload && payload.app === 'DOAN_VIEN_SO' && payload.activityId && payload.token && payload.signature) {
         const found = store.activities.find(a => a.id === payload?.activityId);
         if (found) {
+          // Chỉ chấp nhận nếu hoạt động đang mở hoặc hợp lệ theo hệ thống
+          if (found.status !== 'active') {
+            setValidationWarning('Hoạt động này hiện không mở điểm danh. Vui lòng quét đúng mã QR đang được công bố cho hoạt động đang mở.');
+            setParsedActivity(null);
+            setScannedRawPayload(raw);
+            setIsScanning(true);
+            playBeep(440, 0.2, 'sawtooth');
+            return;
+          }
           setParsedActivity(found);
           return;
         }
       }
 
-      // Check for activity code format e.g. HD-2026-001 or URL containing code
-      const match = qrData.match(/HD-2026-\d{3}/i);
-      if (match) {
-        const code = match[0].toUpperCase();
-        const found = store.activities.find(a => a.activity_code.toUpperCase() === code);
-        if (found) {
-          setParsedActivity(found);
-          return;
-        }
-      }
-
-      // Match by activity ID directly
-      const byId = store.activities.find(a => a.id === qrData);
-      if (byId) {
-        setParsedActivity(byId);
-        return;
-      }
-
-      // Fallback: Default to first active activity
-      const activeAct = store.activities.find(a => a.status === 'active') || store.activities[0];
-      setParsedActivity(activeAct);
+      // Không chấp nhận mã QR không thuộc hệ thống công bố
+      setValidationWarning('Chỉ chấp nhận mã QR do hệ thống Đoàn Viên Số công bố (mã động đang hoạt động). Vui lòng quét đúng mã QR trên màn hình cán bộ phụ trách.');
+      setParsedActivity(null);
+      setScannedRawPayload(raw);
+      setIsScanning(true);
+      playBeep(440, 0.2, 'sawtooth');
+      return;
     } catch {
-      const activeAct = store.activities.find(a => a.status === 'active') || store.activities[0];
-      setParsedActivity(activeAct);
+      setValidationWarning('Mã QR không hợp lệ. Vui lòng quét đúng mã QR do hệ thống công bố.');
+      setParsedActivity(null);
+      setScannedRawPayload(raw);
+      setIsScanning(true);
+      playBeep(440, 0.2, 'sawtooth');
+      return;
     }
   }, []);
 
@@ -457,13 +462,22 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       return;
     }
 
+    // Buộc sử dụng camera trước (selfie) để chỉ chụp một mặt người
+    if (facingMode !== 'user') {
+      setFacingMode('user');
+      startCamera('user').then(() => {
+        setValidationWarning('Vui lòng dùng camera trước để chỉ chụp một mặt người cho ảnh minh chứng.');
+      });
+      return;
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Draw camera image
+    // Draw camera image (chỉ chụp một mặt người)
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // WATERMARK OVERLAY: Timestamp + Đoàn Viên Info + GPS Coordinates for Authenticity
