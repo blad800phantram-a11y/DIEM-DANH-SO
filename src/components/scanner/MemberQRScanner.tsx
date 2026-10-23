@@ -21,11 +21,9 @@ import {
   Navigation,
   Check,
   X,
-  FileCheck2,
-  Info,
-  Clock,
-  Layers,
   Award,
+  Layers,
+  MapPinOff,
 } from 'lucide-react';
 
 interface MemberQRScannerProps {
@@ -79,7 +77,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
   onGoToPoints,
   onGoToHistory,
 }) => {
-  // Navigation & tabs
+  // Navigation tabs
   const [activeTab, setActiveTab] = useState<'real_scanner' | 'demo' | 'manual'>('real_scanner');
 
   // Camera State
@@ -87,7 +85,6 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
   const [cameraError, setCameraError] = useState<string>('');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [isScanning, setIsScanning] = useState<boolean>(true);
-  const [scanLaserActive, setScanLaserActive] = useState<boolean>(true);
 
   // Scanned QR Payload & Target Activity
   const [scannedRawPayload, setScannedRawPayload] = useState<string>('');
@@ -104,6 +101,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
   } | null>(null);
   const [locationStatus, setLocationStatus] = useState<string>('idle'); // idle | fetching | success | error
   const [locationErrorMessage, setLocationErrorMessage] = useState<string>('');
+  const [isSimulatedGps, setIsSimulatedGps] = useState<boolean>(false);
 
   // Live Camera Proof Photo State (Strictly live camera snapshot only - no file uploads!)
   const [isCapturingProof, setIsCapturingProof] = useState<boolean>(false);
@@ -113,6 +111,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
   // Check-in Execution State
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [result, setResult] = useState<CheckInValidationResult | null>(null);
+  const [validationWarning, setValidationWarning] = useState<string>('');
 
   // Manual code input
   const [manualCode, setManualCode] = useState<string>('');
@@ -122,16 +121,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
   const proofVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const isScanningRef = useRef<boolean>(true);
-
-  // Synchronize stream with proofVideoRef when proof capture opens
-  useEffect(() => {
-    if (isCapturingProof && streamRef.current && proofVideoRef.current) {
-      proofVideoRef.current.srcObject = streamRef.current;
-      proofVideoRef.current.play().catch(() => {});
-    }
-  }, [isCapturingProof, cameraActive]);
 
   // Keep scanning ref synced
   useEffect(() => {
@@ -140,6 +130,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
   // Request & Update GPS location
   const fetchCurrentLocation = useCallback(() => {
+    setIsSimulatedGps(false);
     if (!navigator.geolocation) {
       setLocationStatus('error');
       setLocationErrorMessage('Trình duyệt không hỗ trợ Geolocation GPS.');
@@ -191,10 +182,27 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     );
   }, [parsedActivity]);
 
+  // Quick helper to simulate being at Kiên Giang College campus (for testing/judging remotely)
+  const setKienGiangCampusLocation = () => {
+    setIsSimulatedGps(true);
+    setLocationStatus('success');
+    setLocationErrorMessage('');
+    setLocationCoords({
+      latitude: KGC_CAMPUS_COORDS.latitude,
+      longitude: KGC_CAMPUS_COORDS.longitude,
+      accuracy: 5,
+      distance_meters: 10,
+      is_within_radius: true,
+      address: 'Trường Cao đẳng Kiên Giang (Cơ sở 425 Mạc Cửu, TP. Rạch Giá)',
+    });
+  };
+
   // Auto fetch location on component mount or activity change
   useEffect(() => {
-    fetchCurrentLocation();
-  }, [fetchCurrentLocation]);
+    if (!locationCoords) {
+      fetchCurrentLocation();
+    }
+  }, [fetchCurrentLocation, locationCoords]);
 
   // Start Real Camera Stream
   const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
@@ -203,34 +211,47 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCameraError('Trình duyệt không hỗ trợ API Camera HTML5.');
+        setCameraError('Trình duyệt không hỗ trợ API Camera.');
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: mode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: mode },
+            width: { ideal: 1280 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
 
       streamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.muted = true;
         await videoRef.current.play().catch(() => {});
       }
       if (proofVideoRef.current) {
         proofVideoRef.current.srcObject = stream;
+        proofVideoRef.current.setAttribute('playsinline', 'true');
+        proofVideoRef.current.muted = true;
         await proofVideoRef.current.play().catch(() => {});
       }
+
       setCameraActive(true);
       setIsScanning(true);
     } catch (err: any) {
       console.warn('Camera stream error:', err);
       setCameraError(
-        'Không thể mở camera. Vui lòng kiểm tra quyền camera hoặc sử dụng chế độ Quét Thử Nghiệm 1-Chạm.'
+        'Không thể mở camera. Vui lòng cấp quyền truy cập máy ảnh hoặc sử dụng tính năng Quét Thử Nghiệm 1-Chạm.'
       );
       setCameraActive(false);
     }
@@ -257,8 +278,9 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
   };
 
   // Process detected QR string
-  const handleDetectedQRCode = useCallback((qrData: string) => {
-    if (!qrData || !isScanningRef.current) return;
+  const handleDetectedQRCode = useCallback((qrData: string, force = false) => {
+    if (!qrData) return;
+    if (!force && !isScanningRef.current) return;
 
     // Haptic & Sound Feedback
     try {
@@ -268,11 +290,12 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     }
     playBeep(987.77, 0.15, 'sine');
 
-    // Pause scanning to allow user verification
+    // Pause scanning to display verification card
     setIsScanning(false);
     setScannedRawPayload(qrData);
+    setValidationWarning('');
 
-    // Parse payload
+    // Parse payload and match activity
     try {
       let payload: DynamicQRPayload | null = null;
       if (qrData.startsWith('{') && qrData.endsWith('}')) {
@@ -287,7 +310,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
         }
       }
 
-      // If token format e.g. DVS-HD-2026-001-...
+      // Check for activity code format e.g. HD-2026-001 or URL containing code
       const match = qrData.match(/HD-2026-\d{3}/i);
       if (match) {
         const code = match[0].toUpperCase();
@@ -298,10 +321,17 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
         }
       }
 
-      // Fallback: Default to active activity
+      // Match by activity ID directly
+      const byId = store.activities.find(a => a.id === qrData);
+      if (byId) {
+        setParsedActivity(byId);
+        return;
+      }
+
+      // Fallback: Default to first active activity
       const activeAct = store.activities.find(a => a.status === 'active') || store.activities[0];
       setParsedActivity(activeAct);
-    } catch (e) {
+    } catch {
       const activeAct = store.activities.find(a => a.status === 'active') || store.activities[0];
       setParsedActivity(activeAct);
     }
@@ -326,52 +356,56 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
       if (
         video &&
-        video.readyState === video.HAVE_ENOUGH_DATA &&
+        video.readyState >= 2 &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0 &&
         isScanningRef.current &&
         !isDetecting
       ) {
         isDetecting = true;
-
-        // 1. Try Native BarcodeDetector if available
-        if ('BarcodeDetector' in window) {
-          try {
-            const barcodeDetector = new (window as any).BarcodeDetector({
-              formats: ['qr_code'],
-            });
-            const barcodes = await barcodeDetector.detect(video);
-            if (barcodes.length > 0 && barcodes[0].rawValue) {
-              handleDetectedQRCode(barcodes[0].rawValue);
-              isDetecting = false;
-              return;
+        try {
+          // 1. Try Native BarcodeDetector if available
+          if ('BarcodeDetector' in window) {
+            try {
+              const barcodeDetector = new (window as any).BarcodeDetector({
+                formats: ['qr_code'],
+              });
+              const barcodes = await barcodeDetector.detect(video);
+              if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                handleDetectedQRCode(barcodes[0].rawValue);
+                return;
+              }
+            } catch {
+              // Fall through to jsQR
             }
-          } catch {
-            // Fall through to jsQR
           }
-        }
 
-        // 2. jsQR Canvas Decoding Fallback (Works 100% in all modern & mobile browsers)
-        if (ctx && video.videoWidth > 0 && video.videoHeight > 0) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          // 2. jsQR Canvas Decoding (Downscaled to max 640px for smooth 60fps processing)
+          if (ctx) {
+            const maxDim = 640;
+            const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+            const targetW = Math.max(1, Math.floor(video.videoWidth * scale));
+            const targetH = Math.max(1, Math.floor(video.videoHeight * scale));
 
-          try {
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
+            canvas.width = targetW;
+            canvas.height = targetH;
+            ctx.drawImage(video, 0, 0, targetW, targetH);
+
+            const imageData = ctx.getImageData(0, 0, targetW, targetH);
+            const qrCode = jsQR(imageData.data, targetW, targetH, {
               inversionAttempts: 'dontInvert',
             });
 
             if (qrCode && qrCode.data) {
               handleDetectedQRCode(qrCode.data);
-              isDetecting = false;
               return;
             }
-          } catch {
-            // Frame read error, continue
           }
+        } catch {
+          // ignore frame read error
+        } finally {
+          isDetecting = false;
         }
-
-        isDetecting = false;
       }
 
       if (isScanningRef.current) {
@@ -389,6 +423,16 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     };
   }, [cameraActive, isScanning, handleDetectedQRCode]);
 
+  // Synchronize stream with proofVideoRef when proof capture opens
+  useEffect(() => {
+    if (isCapturingProof && streamRef.current && proofVideoRef.current) {
+      proofVideoRef.current.srcObject = streamRef.current;
+      proofVideoRef.current.setAttribute('playsinline', 'true');
+      proofVideoRef.current.muted = true;
+      proofVideoRef.current.play().catch(() => {});
+    }
+  }, [isCapturingProof, cameraActive]);
+
   // Handle Tab Switch
   useEffect(() => {
     if (activeTab === 'real_scanner') {
@@ -403,12 +447,13 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
   // LIVE CAMERA SNAPSHOT CAPTURE (NO FILE UPLOAD ALLOWED - STRICT IN-APP CAMERA ONLY)
   const handleSnapLiveProof = () => {
-    const video = (proofVideoRef.current && proofVideoRef.current.readyState >= proofVideoRef.current.HAVE_CURRENT_DATA)
+    setValidationWarning('');
+    const video = (proofVideoRef.current && proofVideoRef.current.readyState >= 2)
       ? proofVideoRef.current
       : (videoRef.current || proofVideoRef.current);
 
-    if (!video || video.readyState < video.HAVE_CURRENT_DATA) {
-      alert('Camera chưa sẵn sàng để chụp ảnh. Vui lòng đợi 1 giây hoặc thử lại!');
+    if (!video || video.readyState < 2) {
+      setValidationWarning('Camera chưa sẵn sàng. Vui lòng đợi 1 giây hoặc kiểm tra quyền truy cập máy ảnh!');
       return;
     }
 
@@ -454,7 +499,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
     const nowStr = `${new Date().toLocaleTimeString('vi-VN')} ngày ${new Date().toLocaleDateString('vi-VN')}`;
     const gpsStr = locationCoords
-      ? `GPS: ${locationCoords.latitude.toFixed(5)}°N, ${locationCoords.longitude.toFixed(5)}°E (Sai số ±${Math.round(locationCoords.accuracy || 0)}m)${locationCoords.distance_meters !== undefined ? ` • Cự ly: ${locationCoords.distance_meters}m` : ''}`
+      ? `GPS: ${locationCoords.latitude.toFixed(5)}°N, ${locationCoords.longitude.toFixed(5)}°E (±${Math.round(locationCoords.accuracy || 0)}m)${locationCoords.distance_meters !== undefined ? ` • Cự ly: ${locationCoords.distance_meters}m` : ''}`
       : 'GPS: Chưa có tọa độ';
 
     ctx.fillStyle = '#cbd5e1';
@@ -477,8 +522,20 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
   // Submit and verify Check-In with Server
   const handleExecuteCheckIn = () => {
+    setValidationWarning('');
+
     if (!scannedRawPayload) {
-      alert('Vui lòng quét mã QR hợp lệ trước khi bấm xác nhận.');
+      setValidationWarning('Vui lòng quét hoặc chọn mã QR hoạt động trước khi bấm xác nhận.');
+      return;
+    }
+
+    if (parsedActivity?.requires_proof && (!proofImage || !proofImage.startsWith('data:image/'))) {
+      setValidationWarning('Hoạt động này bắt buộc chụp ảnh minh chứng trực tiếp bằng camera tại sự kiện!');
+      return;
+    }
+
+    if (parsedActivity?.requires_geo && !locationCoords) {
+      setValidationWarning('Hoạt động này bắt buộc thu thập định vị GPS để xác thực vị trí!');
       return;
     }
 
@@ -509,7 +566,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
           // ignore
         }
       }
-    }, 400);
+    }, 350);
   };
 
   // Reset scanner to scan another code
@@ -517,13 +574,17 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
     setScannedRawPayload('');
     setParsedActivity(null);
     setResult(null);
+    setValidationWarning('');
     setIsScanning(true);
     setIsCapturingProof(false);
   };
 
   // 1-Click Test Demo for Judges
-  const handleTriggerDemoCheckIn = () => {
-    const activeAct = store.activities.find(a => a.status === 'active') || store.activities[0];
+  const handleTriggerDemoCheckIn = (activityId?: string) => {
+    const activeAct = activityId
+      ? store.activities.find(a => a.id === activityId)
+      : store.activities.find(a => a.status === 'active') || store.activities[0];
+
     if (!activeAct) {
       setResult({
         success: false,
@@ -536,7 +597,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       const { qrString } = store.startOrGetQRSession(activeAct.id);
       setScannedRawPayload(qrString);
       setParsedActivity(activeAct);
-      handleDetectedQRCode(qrString);
+      handleDetectedQRCode(qrString, true);
     } catch (e: any) {
       setResult({
         success: false,
@@ -550,7 +611,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       {/* Header */}
       <div className="text-center">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 mb-2 shadow-xs">
-          <QrCode size={14} /> Điểm danh quét mã QR thật & Minh chứng camera
+          <QrCode size={14} /> Điểm danh quét camera QR thật & Minh chứng thực tế
         </div>
         <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
           Quét Mã QR & Thu Thập Minh Chứng
@@ -597,6 +658,17 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
         </button>
       </div>
 
+      {/* VALIDATION WARNING TOAST */}
+      {validationWarning && (
+        <div className="p-3.5 bg-amber-50 border border-amber-300 text-amber-950 rounded-2xl flex items-start gap-2.5 text-xs font-semibold animate-in fade-in">
+          <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">{validationWarning}</div>
+          <button onClick={() => setValidationWarning('')} className="text-slate-400 hover:text-slate-600">
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       {/* RESULT BANNER (SUCCESS / FAILURE) */}
       {result && (
         <div
@@ -640,7 +712,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
                     <div>• GPS: {result.attendance.coordinates.latitude.toFixed(5)}°N, {result.attendance.coordinates.longitude.toFixed(5)}°E (Cự ly: {result.attendance.coordinates.distance_meters ?? 0}m)</div>
                   )}
                   {result.attendance.proof_image && (
-                    <div>• Ảnh minh chứng: Đã lưu ảnh chụp trực tiếp từ camera</div>
+                    <div>• Ảnh minh chứng: Đã lưu ảnh chụp trực tiếp từ camera có đóng dấu kỹ thuật số</div>
                   )}
                 </div>
               )}
@@ -672,7 +744,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
           <div className="flex items-center justify-between">
             <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
               <Camera size={15} className="text-blue-600" />
-              <span>Máy ảnh trực tiếp (Hỗ trợ camera điện thoại & máy tính)</span>
+              <span>Máy ảnh trực tiếp (Tự động nhận diện QR liên tục)</span>
             </div>
             {cameraActive && (
               <button
@@ -706,7 +778,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
                     
                     <div className="text-center">
                       <span className="text-[11px] bg-slate-900/85 text-cyan-200 px-3 py-1 rounded-full font-mono border border-cyan-500/30 backdrop-blur-xs">
-                        Đang dò tìm mã QR tự động...
+                        Hướng máy ảnh vào mã QR trên màn hình hoặc giấy
                       </span>
                     </div>
                   </div>
@@ -723,9 +795,9 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
                     </span>
                     <button
                       onClick={() => setIsScanning(true)}
-                      className="mt-3 px-3 py-1 bg-white text-slate-900 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center gap-1"
+                      className="mt-3 px-3 py-1 bg-white text-slate-900 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center gap-1 shadow-sm"
                     >
-                      <RefreshCw size={12} /> Quét lại
+                      <RefreshCw size={12} /> Quét lại mã khác
                     </button>
                   </div>
                 )}
@@ -747,13 +819,16 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
           </div>
 
           {/* Quick Helper to auto test without another device */}
-          <div className="pt-1 flex items-center justify-between text-xs text-slate-500">
-            <span>Không có 2 thiết bị để chiếu QR?</span>
+          <div className="p-3 bg-blue-50/80 rounded-2xl border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+            <div>
+              <span className="font-bold text-blue-900 block">Thử nghiệm nhanh trên 1 thiết bị:</span>
+              <span className="text-[11px] text-blue-700">Tự động nạp mã QR của hoạt động đang mở mà không cần 2 máy</span>
+            </div>
             <button
-              onClick={handleTriggerDemoCheckIn}
-              className="text-blue-700 hover:text-blue-800 font-bold underline flex items-center gap-1"
+              onClick={() => handleTriggerDemoCheckIn()}
+              className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-xs shrink-0 transition"
             >
-              <Zap size={13} className="text-amber-500" /> Nhận diện QR đang mở (1-Chạm)
+              <Zap size={13} className="text-amber-400" /> Quét thử QR Đang Mở (1-Chạm)
             </button>
           </div>
         </div>
@@ -763,21 +838,37 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       {activeTab === 'demo' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-xs text-blue-950">
-            <strong>Chế độ Trình diễn Ban Giám Khảo:</strong> Giúp mô phỏng quét các mã QR động xoay vòng trên hệ thống mà không cần 2 máy độc lập.
+            <strong>Chế độ Trình diễn Ban Giám Khảo:</strong> Giúp kiểm thử các tình huống xác thực mã QR mà không bắt buộc dùng camera quét từ thiết bị khác.
           </div>
 
           <div className="space-y-3">
             <button
-              onClick={handleTriggerDemoCheckIn}
+              onClick={() => handleTriggerDemoCheckIn('act_001')}
               className="w-full p-3.5 bg-blue-700 hover:bg-blue-800 text-white rounded-2xl font-bold text-xs sm:text-sm text-left flex items-center justify-between shadow-xs transition"
             >
               <div>
                 <div className="font-extrabold flex items-center gap-1.5">
                   <CheckCircle2 size={16} className="text-emerald-300" />
-                  Mô phỏng 1: Quét mã QR hoạt động đang mở hợp lệ
+                  Mô phỏng 1: Quét mã hoạt động HD-2026-001 (Yêu cầu GPS + Ảnh minh chứng)
                 </div>
                 <div className="text-[11px] text-blue-100 font-normal mt-0.5">
-                  Lấy phiên mã QR động đang phát, kiểm tra chữ ký & mở bước xác nhận
+                  Hiến máu tình nguyện 'Giọt hồng thanh niên' - Mức duyệt: +5 Ngày CTXH
+                </div>
+              </div>
+              <ArrowRight size={16} />
+            </button>
+
+            <button
+              onClick={() => handleTriggerDemoCheckIn('act_002')}
+              className="w-full p-3.5 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-bold text-xs sm:text-sm text-left flex items-center justify-between shadow-xs transition"
+            >
+              <div>
+                <div className="font-extrabold flex items-center gap-1.5">
+                  <CheckCircle2 size={16} className="text-cyan-300" />
+                  Mô phỏng 2: Quét mã hoạt động HD-2026-002 (Chủ nhật xanh - +3 Ngày CTXH)
+                </div>
+                <div className="text-[11px] text-slate-300 font-normal mt-0.5">
+                  Ra quân bảo vệ môi trường & phân loại rác thải
                 </div>
               </div>
               <ArrowRight size={16} />
@@ -791,24 +882,24 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
                   activityId: activeAct.id,
                   activityCode: activeAct.activity_code,
                   token: 'DVS-EXPIRED-TOKEN-TEST',
-                  timestamp: Date.now() - 60000,
-                  expiresAt: Date.now() - 30000, // expired 30s ago
+                  timestamp: Date.now() - 300000,
+                  expiresAt: Date.now() - 200000, // expired long ago
                   cycleSeconds: 30,
                   signature: 'dummy-sig',
                 };
                 setScannedRawPayload(JSON.stringify(expiredPayload));
                 setParsedActivity(activeAct);
-                handleDetectedQRCode(JSON.stringify(expiredPayload));
+                handleDetectedQRCode(JSON.stringify(expiredPayload), true);
               }}
               className="w-full p-3.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-950 rounded-2xl font-bold text-xs sm:text-sm text-left flex items-center justify-between transition"
             >
               <div>
                 <div className="font-extrabold flex items-center gap-1.5 text-rose-700">
                   <AlertTriangle size={16} />
-                  Mô phỏng 2: Quét mã QR đã hết hạn (&gt;30s xoay vòng)
+                  Mô phỏng 3: Quét mã QR đã hết hạn (&gt;30s xoay vòng)
                 </div>
                 <div className="text-[11px] text-slate-500 font-normal mt-0.5">
-                  Kiểm tra tính toàn vẹn máy chủ và cơ chế chống chụp lại ảnh QR
+                  Kiểm tra máy chủ từ chối mã cũ nhằm chống chụp lén mã QR phát lại
                 </div>
               </div>
               <ArrowRight size={16} />
@@ -821,17 +912,17 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
       {activeTab === 'manual' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
           <p className="text-xs text-slate-600">
-            Dán chuỗi token hoặc JSON mã QR do cán bộ Đoàn cung cấp nếu thiết bị không có camera:
+            Dán chuỗi token, JSON mã QR hoặc nhập mã hoạt động (ví dụ: <strong className="font-mono text-blue-700">HD-2026-001</strong>) do cán bộ Đoàn cung cấp:
           </p>
           <textarea
             value={manualCode}
             onChange={e => setManualCode(e.target.value)}
-            placeholder="Dán mã JSON hoặc token QR tại đây..."
+            placeholder="Dán mã JSON, token hoặc nhập HD-2026-001 tại đây..."
             rows={3}
             className="w-full p-3 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
           />
           <button
-            onClick={() => handleDetectedQRCode(manualCode)}
+            onClick={() => handleDetectedQRCode(manualCode, true)}
             disabled={!manualCode.trim()}
             className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white rounded-xl font-bold text-xs sm:text-sm transition shadow-xs"
           >
@@ -842,18 +933,18 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
 
       {/* SECTION 4: ACTIVITY & VERIFICATION REQUIREMENTS CARD (WHEN QR IS SCANNED) */}
       {parsedActivity && (
-        <div className="bg-white rounded-3xl border border-blue-200 p-5 shadow-md space-y-4 animate-in fade-in slide-in-from-bottom-3">
+        <div className="bg-white rounded-3xl border-2 border-blue-500/80 p-5 shadow-xl space-y-5 animate-in fade-in slide-in-from-bottom-3">
           <div className="border-b border-slate-100 pb-3 flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[10px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
                   {parsedActivity.activity_code}
                 </span>
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                   +{parsedActivity.points} NGÀY CTXH
                 </span>
               </div>
-              <h3 className="text-base font-extrabold text-slate-900 mt-1">
+              <h3 className="text-base sm:text-lg font-black text-slate-900 mt-1">
                 {parsedActivity.title}
               </h3>
               <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
@@ -871,17 +962,17 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
           </div>
 
           {/* RÀNG BUỘC 1: THU THẬP & KIỂM TRA ĐỊNH VỊ GPS */}
-          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 text-xs">
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
                 <Navigation size={14} className="text-blue-600" />
                 Ràng buộc Định vị GPS:
                 {parsedActivity.requires_geo ? (
-                  <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded font-bold">
-                    Bắt buộc
+                  <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold">
+                    Bắt buộc có mặt tại sự kiện
                   </span>
                 ) : (
-                  <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.2 rounded font-medium">
+                  <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium">
                     Tùy chọn
                   </span>
                 )}
@@ -899,69 +990,85 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
             {locationStatus === 'fetching' && (
               <div className="text-[11px] text-blue-600 flex items-center gap-1.5">
                 <RefreshCw size={12} className="animate-spin" />
-                Đang thu thập tọa độ vệ tinh GPS chính xác...
+                Đang kết nối vệ tinh GPS thu thập tọa độ thực tế...
               </div>
             )}
 
             {locationStatus === 'error' && (
-              <div className="text-[11px] text-rose-600 bg-rose-50 p-2 rounded-lg border border-rose-200">
-                {locationErrorMessage}
+              <div className="text-[11px] text-rose-700 bg-rose-50 p-2.5 rounded-xl border border-rose-200 space-y-1.5">
+                <div>{locationErrorMessage}</div>
+                <button
+                  onClick={setKienGiangCampusLocation}
+                  className="px-3 py-1 bg-rose-600 text-white rounded-lg font-bold text-[11px] flex items-center gap-1"
+                >
+                  <MapPin size={11} /> Kích hoạt GPS kiểm thử tại Trường CĐ Kiên Giang
+                </button>
               </div>
             )}
 
             {locationStatus === 'success' && locationCoords && (
-              <div className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1">
+              <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5 shadow-2xs">
                 <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="text-slate-500">Tọa độ:</span>
-                  <span className="font-bold text-slate-800">
+                  <span className="text-slate-500">Tọa độ GPS thu thập:</span>
+                  <span className="font-bold text-slate-900">
                     {formatCoordinates(locationCoords.latitude, locationCoords.longitude)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-500">Khoảng cách đến điểm tổ chức:</span>
                   <span
-                    className={`font-extrabold ${
+                    className={`font-black ${
                       locationCoords.is_within_radius ? 'text-emerald-600' : 'text-amber-600'
                     }`}
                   >
-                    {locationCoords.distance_meters}m {locationCoords.is_within_radius ? '(✓ Trong bán kính)' : '(Ngoài bán kính tiêu chuẩn)'}
+                    {locationCoords.distance_meters}m {locationCoords.is_within_radius ? '(✓ Hợp lệ trong bán kính)' : '(Ngoài bán kính sự kiện)'}
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-400">
-                  Độ chính xác vệ tinh: ±{Math.round(locationCoords.accuracy || 0)}m
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Độ chính xác: ±{Math.round(locationCoords.accuracy || 0)}m</span>
+                  {isSimulatedGps ? (
+                    <span className="text-blue-600 font-semibold">[Chế độ mô phỏng BGK]</span>
+                  ) : (
+                    <button
+                      onClick={setKienGiangCampusLocation}
+                      className="text-blue-600 hover:underline font-bold"
+                    >
+                      Mô phỏng tại trường Kiên Giang
+                    </button>
+                  )}
                 </div>
               </div>
             )}
           </div>
 
           {/* RÀNG BUỘC 2: HÌNH ẢNH MINH CHỨNG (CHỈ CHỤP TRỰC TIẾP TỪ CAMERA - KHÔNG CHO TẢI ẢNH) */}
-          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5 text-xs">
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
                 <Camera size={14} className="text-blue-600" />
-                Hình ảnh Minh chứng Tham gia:
+                Hình ảnh Minh chứng Tham gia Có mặt:
                 {parsedActivity.requires_proof ? (
-                  <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded font-bold">
+                  <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold">
                     Bắt buộc chụp trực tiếp
                   </span>
                 ) : (
-                  <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.2 rounded font-medium">
+                  <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium">
                     Tùy chọn
                   </span>
                 )}
               </span>
             </div>
 
-            <p className="text-[11px] text-slate-500">
-              * Quy định bảo mật: <strong className="text-slate-800">Không cho phép tải ảnh từ thư viện/bộ nhớ máy</strong>. Đoàn viên chỉ được chụp trực tiếp qua camera tại thời điểm điểm danh để chống gian lận.
+            <p className="text-[11px] text-slate-600">
+              * Quy định bảo mật: <strong className="text-slate-900">Tuyệt đối không nhận ảnh từ thư viện máy</strong>. Đoàn viên phải bấm nút chụp ảnh trực tiếp tại sự kiện để hệ thống đóng dấu số Watermark.
             </p>
 
-            {/* Proof Image Preview or Shutter Trigger */}
+            {/* If proof already captured, show preview */}
             {proofImage ? (
-              <div className="bg-white p-3 rounded-2xl border border-emerald-200 space-y-2">
+              <div className="bg-white p-3 rounded-2xl border border-emerald-300 space-y-2 shadow-2xs">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-emerald-700 font-bold flex items-center gap-1">
-                    <CheckCircle2 size={13} /> Đã chụp minh chứng trực tiếp từ camera
+                    <CheckCircle2 size={13} /> Đã chụp ảnh minh chứng có mặt trực tiếp
                   </span>
                   <button
                     onClick={() => {
@@ -975,7 +1082,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
                   </button>
                 </div>
 
-                <div className="relative rounded-xl overflow-hidden border border-slate-200 max-w-xs mx-auto">
+                <div className="relative rounded-xl overflow-hidden border border-slate-200 max-w-xs mx-auto shadow-xs">
                   <img
                     src={proofImage}
                     alt="Minh chứng trực tiếp"
@@ -987,61 +1094,43 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
                 </div>
               </div>
             ) : (
+              /* Live Camera Capture Viewfinder */
               <div className="space-y-2">
-                {!isCapturingProof ? (
-                  <button
-                    onClick={() => {
-                      setIsCapturingProof(true);
-                      startCamera('user'); // Switch to front camera for selfie proof
-                    }}
-                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-xs transition"
-                  >
-                    <Camera size={16} />
-                    <span>Mở máy ảnh chụp minh chứng trực tiếp ngay</span>
-                  </button>
-                ) : (
-                  <div className="bg-slate-900 p-3 rounded-2xl space-y-2 text-center text-white">
-                    <div className="text-[11px] text-cyan-300 font-semibold flex items-center justify-between">
-                      <span>Khung hình chụp minh chứng (Khuôn mặt hoặc cảnh sự kiện)</span>
-                      <button
-                        onClick={handleToggleFacingMode}
-                        className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px]"
-                      >
-                        Đổi camera
-                      </button>
-                    </div>
+                <div className="bg-slate-900 p-3 rounded-2xl space-y-2 text-center text-white">
+                  <div className="text-[11px] text-cyan-300 font-semibold flex items-center justify-between px-1">
+                    <span>Khung hình chụp minh chứng có mặt</span>
+                    <button
+                      onClick={handleToggleFacingMode}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] flex items-center gap-1 font-bold"
+                    >
+                      <SwitchCamera size={11} />
+                      {facingMode === 'user' ? 'Đổi sang camera sau' : 'Đổi sang camera trước'}
+                    </button>
+                  </div>
 
-                    <div className="relative aspect-video max-w-xs mx-auto rounded-xl overflow-hidden bg-black flex items-center justify-center">
-                      <video
-                        ref={proofVideoRef}
-                        playsInline
-                        muted
-                        autoPlay
-                        className="w-full h-full object-cover"
-                      />
-                      {/* Guide oval */}
-                      <div className="absolute inset-4 border-2 border-dashed border-white/50 rounded-2xl pointer-events-none" />
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setIsCapturingProof(false);
-                          startCamera('environment');
-                        }}
-                        className="flex-1 py-2 bg-slate-800 text-slate-300 hover:bg-slate-700 rounded-xl text-xs font-bold"
-                      >
-                        Hủy
-                      </button>
-                      <button
-                        onClick={handleSnapLiveProof}
-                        className="flex-2 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-md"
-                      >
-                        <Camera size={14} /> Bấm chụp ảnh ngay
-                      </button>
+                  <div className="relative aspect-video max-w-xs mx-auto rounded-xl overflow-hidden bg-black flex items-center justify-center">
+                    <video
+                      ref={proofVideoRef}
+                      playsInline
+                      muted
+                      autoPlay
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Visual Oval Framing Guide */}
+                    <div className="absolute inset-3 border-2 border-dashed border-cyan-400/60 rounded-2xl pointer-events-none flex items-center justify-center">
+                      <span className="text-[10px] bg-slate-950/70 text-slate-200 px-2 py-0.5 rounded-full">
+                        Căn góc mặt hoặc sự kiện
+                      </span>
                     </div>
                   </div>
-                )}
+
+                  <button
+                    onClick={handleSnapLiveProof}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-lg transition"
+                  >
+                    <Camera size={16} /> BẤM CHỤP ẢNH MINH CHỨNG TRỰC TIẾP
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1051,7 +1140,7 @@ export const MemberQRScanner: React.FC<MemberQRScannerProps> = ({
             <button
               onClick={handleExecuteCheckIn}
               disabled={isProcessing}
-              className="w-full py-3.5 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 hover:from-blue-800 hover:to-indigo-800 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-lg transition disabled:opacity-50"
+              className="w-full py-4 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 hover:from-blue-800 hover:to-indigo-800 active:scale-99 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-xl transition disabled:opacity-50 cursor-pointer"
             >
               {isProcessing ? (
                 <>

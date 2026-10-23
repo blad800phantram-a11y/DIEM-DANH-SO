@@ -351,10 +351,22 @@ export class DataStore {
     try {
       payload = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload;
     } catch {
-      return {
-        success: false,
-        message: 'Mã QR không hợp lệ hoặc sai định dạng của hệ thống Đoàn Viên Số.',
-      };
+      // Hỗ trợ nếu người dùng quét mã QR chứa chuỗi văn bản mã hoạt động (HD-2026-xxx) hoặc URL sự kiện
+      const rawStr = String(rawPayload || '').trim();
+      const codeMatch = rawStr.match(/HD-2026-\d{3}/i);
+      const matchedAct = codeMatch
+        ? this.activities.find(a => a.activity_code.toUpperCase() === codeMatch[0].toUpperCase())
+        : this.activities.find(a => a.id === rawStr || a.activity_code.toUpperCase() === rawStr.toUpperCase());
+
+      if (matchedAct) {
+        const generated = this.startOrGetQRSession(matchedAct.id);
+        payload = JSON.parse(generated.qrString);
+      } else {
+        return {
+          success: false,
+          message: 'Mã QR không hợp lệ hoặc không thuộc hệ thống Đoàn Viên Số.',
+        };
+      }
     }
 
     // 3. Kiểm tra chữ ký và hạn sử dụng của Token

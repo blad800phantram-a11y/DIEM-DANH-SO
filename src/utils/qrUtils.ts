@@ -75,8 +75,8 @@ export function verifyTokenIntegrity(payload: Partial<DynamicQRPayload>): {
   }
 
   const now = Date.now();
-  // 5 seconds grace period for network latency
-  const GRACE_PERIOD_MS = 5000;
+  // 120 seconds grace period for network latency and capturing live camera proof
+  const GRACE_PERIOD_MS = 120000;
 
   if (now > payload.expiresAt + GRACE_PERIOD_MS) {
     return {
