@@ -52,15 +52,7 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
   const isCheckedIn = (activityId: string) =>
     userAttendances.some(a => a.activity_id === activityId && a.status === 'verified');
 
-  // Classification based on accumulated training points
-  const getClassification = (pts: number) => {
-    if (pts >= 30) return { label: 'Đoàn viên Xuất sắc', color: 'bg-emerald-100 text-emerald-800' };
-    if (pts >= 20) return { label: 'Đoàn viên Tốt', color: 'bg-blue-100 text-blue-800' };
-    if (pts >= 10) return { label: 'Đoàn viên Khá', color: 'bg-amber-100 text-amber-800' };
-    return { label: 'Đoàn viên Trung bình', color: 'bg-slate-100 text-slate-700' };
-  };
-
-  const classification = getClassification(currentUser.total_points || 0);
+  //  removed - không xếp loại dựa vào ngày công tác xã hội
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
@@ -83,7 +75,6 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
               <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-blue-100">
                 <span className="font-mono font-bold bg-white/15 px-2 py-0.5 rounded">
                   {currentUser.student_code}
-                </span>
                 <span>•</span>
                 <span>{currentUser.class_name}</span>
                 <span>•</span>
@@ -93,11 +84,9 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
           </div>
 
           <div className="self-start sm:self-center">
-            <span
-              className={`inline-block px-3 py-1 rounded-full text-xs font-bold shadow-xs ${classification.color}`}
+
             >
-              ★ {classification.label}
-            </span>
+
           </div>
         </div>
 
@@ -146,7 +135,6 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
           </div>
           <span className="text-xs text-slate-500 font-medium">
             {activities.length} hoạt động
-          </span>
         </div>
 
         <div className="space-y-3">
@@ -169,29 +157,23 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
                       {act.activity_code}
-                    </span>
                     <span className="font-bold text-xs text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                       +{act.points} điểm
-                    </span>
                     {checked && (
                       <span className="inline-flex items-center gap-1 font-bold text-xs text-emerald-800 bg-emerald-200/80 px-2.5 py-0.5 rounded-full">
                         <CheckCircle2 size={12} /> Đã điểm danh
-                      </span>
                     )}
                     {isOpen && !checked && (
                       <span className="font-bold text-xs text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full animate-pulse">
                         Đang mở điểm danh
-                      </span>
                     )}
                     {act.requires_geo && (
                       <span className="inline-flex items-center gap-1 font-semibold text-[11px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                         <Navigation size={10} className="text-amber-600" /> Bắt buộc GPS
-                      </span>
                     )}
                     {act.requires_proof && (
                       <span className="inline-flex items-center gap-1 font-semibold text-[11px] text-purple-800 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
                         <Camera size={10} className="text-purple-600" /> Chụp minh chứng camera
-                      </span>
                     )}
                   </div>
 
@@ -201,10 +183,8 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
                   <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <MapPin size={12} /> {act.location}
-                    </span>
                     <span className="flex items-center gap-1">
                       <Clock size={12} /> Bắt đầu: {formatVietnameseDateTime(act.start_time)}
-                    </span>
                   </div>
                 </div>
 
@@ -212,7 +192,6 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
                   {checked ? (
                     <span className="px-3.5 py-2 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold inline-block">
                       Đã ghi nhận +{act.points} ngày
-                    </span>
                   ) : isOpen ? (
                     <button
                       onClick={onOpenScanner}
@@ -223,7 +202,6 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
                   ) : (
                     <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold inline-block">
                       {act.status === 'scheduled' ? 'Sắp diễn ra' : 'Đã kết thúc'}
-                    </span>
                   )}
                 </div>
               </div>
@@ -243,7 +221,6 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
           </div>
           <span className="text-xs font-bold text-blue-700">
             Tổng cộng: {currentUser.total_points || 0} ngày
-          </span>
         </div>
 
         {userTransactions.length > 0 ? (
@@ -267,7 +244,6 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
                   </div>
                   <span className="inline-block text-[10px] font-bold text-slate-500">
                     {tx.transaction_type === 'attendance' ? 'Điểm danh QR' : 'Điều chỉnh'}
-                  </span>
                 </div>
               </div>
             ))}
@@ -295,7 +271,6 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <span className="font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded text-[10px]">
                   {ann.badge}
-                </span>
                 <span className="text-[11px] text-slate-400">{ann.date}</span>
               </div>
               <h5 className="font-bold text-slate-900 text-xs sm:text-sm mt-1.5">{ann.title}</h5>

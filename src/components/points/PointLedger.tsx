@@ -75,8 +75,8 @@ export const PointLedger: React.FC<PointLedgerProps> = ({ currentUser }) => {
     .filter(t => t.status === 'confirmed')
     .reduce((sum, t) => sum + (t.points || 0), 0);
 
-  // Classification helper
-  const getClassification = (pts: number) => {
+
+
     if (pts >= 30) return { label: 'Xuất sắc', color: 'bg-emerald-100 text-emerald-800' };
     if (pts >= 20) return { label: 'Tốt', color: 'bg-blue-100 text-blue-800' };
     if (pts >= 10) return { label: 'Khá', color: 'bg-amber-100 text-amber-800' };
@@ -236,7 +236,7 @@ export const PointLedger: React.FC<PointLedgerProps> = ({ currentUser }) => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredMembers.map((m, idx) => {
-                  const classification = getClassification(m.total_points || 0);
+
                   return (
                     <tr key={m.id} className="hover:bg-slate-50/70 transition">
                       <td className="py-2.5 px-3.5 text-center font-mono text-slate-400">{idx + 1}</td>
@@ -250,8 +250,8 @@ export const PointLedger: React.FC<PointLedgerProps> = ({ currentUser }) => {
                         {m.total_points} ngày
                       </td>
                       <td className="py-2.5 px-3.5 text-center">
-                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${classification.color}`}>
-                          {classification.label}
+
+
                         </span>
                       </td>
                     </tr>
