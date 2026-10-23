@@ -1,0 +1,11 @@
+{
+  "name": "Đoàn Viên Số - Điểm Danh QR & Ngày Công Tác Xã Hội",
+  "description": "Hệ thống điểm danh QR động và tích lũy ngày Công tác xã hội Đoàn viên thanh niên",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
