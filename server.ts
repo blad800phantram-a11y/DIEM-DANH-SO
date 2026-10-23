@@ -7,17 +7,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+
+// In AI Studio Cloud Run containers, Nginx listens on port 8080 and proxies traffic to localhost:3000.
+// If process.env.PORT is 8080, Express must still listen on port 3000 to avoid EADDRINUSE conflict with Nginx.
+const PORT = process.env.PORT && process.env.PORT !== '8080' ? Number(process.env.PORT) : 3000;
 
 app.use(express.json());
 
-// Healthcheck endpoint for Cloud Run and monitoring
-app.get('/health', (_req, res) => {
-  res.status(200).send('OK');
-});
-
-app.get('/api/health', (_req, res) => {
-  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+// Healthcheck endpoints for Cloud Run and monitoring probes
+app.get(['/health', '/healthz', '/api/health'], (_req, res) => {
+  res.status(200).json({ status: 'healthy', ok: true, timestamp: new Date().toISOString() });
 });
 
 const distPath = path.resolve(__dirname, 'dist');
@@ -33,10 +32,17 @@ if (fs.existsSync(distPath)) {
 } else {
   // In case build hasn't run yet
   app.get('*', (_req, res) => {
-    res.send('Building application, please wait a moment...');
+    res.send('Đoàn Viên Số - Đang khởi động hệ thống, vui lòng chờ trong giây lát...');
   });
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Đoàn Viên Số server listening on http://0.0.0.0:${PORT}`);
 });
+
+process.on('SIGTERM', () => {
+  server.close(() => {
+    process.exit(0);
+  });
+});
+
